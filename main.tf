@@ -26,8 +26,11 @@ resource "yandex_compute_instance" "this" {
   service_account_id = var.service_account_id != null ? var.service_account_id : (var.monitoring || var.backup ? yandex_iam_service_account.sa_instance[0].id : null)
   labels             = var.labels
   metadata = merge(
-    var.custom_metadata,
     var.serial_port_enable ? { "serial-port-enable" = "1" } : {},
+    
+    # ПРОВЕРКА: Если кастомный user-data ПЕРЕДАН, этот блок вернет пустую мапу {} и дефолт не сгенерируется.
+    # Если в var.custom_metadata пустота {}, то генерируется дефолтный конфиг модуля.
+    lookup(var.custom_metadata, "user-data", null) == null ? (
     var.monitoring || var.backup ? {
       "user-data" = format("#cloud-config\npackages:\n  - curl\n  - perl\n  - jq\n%s\nruncmd:\n%s",
         local.ssh_key != null ? format("users:\n  - name: %s\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    shell: /bin/bash\n    ssh_authorized_keys:\n      - %s",
@@ -44,8 +47,11 @@ resource "yandex_compute_instance" "this" {
         local.ssh_user != null ? local.ssh_user : "default_user",
         file(local.ssh_key)
       ) : ""
-    },
-    local.enable_oslogin == "true" ? { "enable-oslogin" = local.enable_oslogin } : {}
+    }
+    ) : {},
+
+    local.enable_oslogin == "true" ? { "enable-oslogin" = local.enable_oslogin } : {},
+    var.custom_metadata
   )
 
   allow_stopping_for_update = var.allow_stopping_for_update
